@@ -1,0 +1,80 @@
+<div class="occ-instruction">All revealed</div>
+<div class="occ-wrap" id="occ-images">
+{{Front}}
+</div>
+
+<div id="occ-data" style="display:none">{{Occlusions}}</div>
+
+<script>
+setTimeout(function () {
+  var raw = document.getElementById('occ-data').textContent.trim();
+  var wrap = document.getElementById('occ-images');
+  var imgList = wrap.getElementsByTagName('img');
+
+  var imgs = [];
+  for (var i = 0; i < imgList.length; i++) imgs.push(imgList[i]);
+
+  function parseOcclusions(raw) {
+    var map = {};
+    var chunks = raw.split('||');
+    for (var c = 0; c < chunks.length; c++) {
+      var chunk = chunks[c].trim();
+      if (!chunk) continue;
+      var colonIdx = chunk.indexOf(':');
+      if (colonIdx < 0) continue;
+      var idx = parseInt(chunk.slice(0, colonIdx).trim(), 10);
+      var boxParts = chunk.slice(colonIdx + 1).split(';');
+      var boxes = [];
+      for (var b = 0; b < boxParts.length; b++) {
+        var part = boxParts[b].trim();
+        if (!part) continue;
+        var eqIdx = part.indexOf('=');
+        var coordsStr = eqIdx >= 0 ? part.slice(0, eqIdx) : part;
+        var label = eqIdx >= 0 ? part.slice(eqIdx + 1).trim() : '';
+        var coords = coordsStr.split(',');
+        boxes.push({
+          x: parseFloat(coords[0]),
+          y: parseFloat(coords[1]),
+          w: parseFloat(coords[2]),
+          h: parseFloat(coords[3]),
+          label: label
+        });
+      }
+      map[idx] = boxes;
+    }
+    return map;
+  }
+
+  var occMap = parseOcclusions(raw);
+
+  for (var i = 0; i < imgs.length; i++) {
+    var img = imgs[i];
+    var idx = i + 1;
+    var boxes = occMap[idx];
+    if (!boxes || !boxes.length) continue;
+
+    var holder = document.createElement('div');
+    holder.className = 'occ-holder';
+    img.parentNode.insertBefore(holder, img);
+    holder.appendChild(img);
+
+    for (var j = 0; j < boxes.length; j++) {
+      var box = boxes[j];
+      var mask = document.createElement('div');
+      // Pre-revealed and locked — the Back is the answer, no tapping needed.
+      mask.className = 'occ-mask occ-revealed occ-locked' + (box.label ? '' : ' occ-blank');
+      mask.style.left = box.x + '%';
+      mask.style.top = box.y + '%';
+      mask.style.width = box.w + '%';
+      mask.style.height = box.h + '%';
+
+      var labelSpan = document.createElement('span');
+      labelSpan.className = 'occ-label';
+      labelSpan.textContent = box.label;
+      mask.appendChild(labelSpan);
+
+      holder.appendChild(mask);
+    }
+  }
+}, 0);
+</script>
