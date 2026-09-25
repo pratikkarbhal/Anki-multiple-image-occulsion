@@ -28,7 +28,7 @@ If your images live in a field named something other than `Front`, find-and-repl
 
 Drawing coordinates by hand is painful, so this tool does it visually instead.
 
-1. Open ![`box-picker.html`](https://pratikkarbhal.github.io/Anki-multiple-image-occulsion/) in any browser — phone or desktop, no install needed
+1. Open [`box-picker.html`](https://pratikkarbhal.github.io/Anki-multiple-image-occulsion/) in any browser — phone or desktop, no install needed
 2. Tap **+ Add Page(s)**, select your images in the **same order** they appear on the Anki card
 3. All pages stack, scrollable, like a document — drag directly on any image to draw a box, no typing required
 4. Tap an existing box to delete it. Use ▲▼🗑 in a page's header to reorder or remove a page
