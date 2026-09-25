@@ -117,7 +117,7 @@ button:disabled { opacity: 0.4; cursor: default; transform: none; }
 <body>
 <div class="wrap">
   <h1>Occlusion Box Picker</h1>
-  <p class="hint">Add your page images <strong>in the same order</strong> they appear in your Anki card. Drag on an image to draw a box, then type what's hidden there. Tap an existing box to edit or delete it. When every page is done, hit <strong>Generate Code</strong> and copy the result into your Anki "Occlusions" field.</p>
+  <p class="hint">Add your page images <strong>in the same order</strong> they appear in your Anki card. Drag on an image to draw a plain box — no typing needed. Tap an existing box to delete it. When every page is done, hit <strong>Generate Code</strong> and copy the result into your Anki "Occlusions" field.</p>
 
   <div class="toolbar">
     <button id="addPageBtn">+ Add Page(s)</button>
@@ -185,22 +185,16 @@ button:disabled { opacity: 0.4; cursor: default; transform: none; }
     el.style.top = box.y + '%';
     el.style.width = box.w + '%';
     el.style.height = box.h + '%';
-    el.textContent = box.label;
 
     el.addEventListener('pointerdown', function (ev) { ev.stopPropagation(); });
 
     el.addEventListener('click', function (ev) {
       ev.stopPropagation();
-      var next = window.prompt('Edit label (clear the text to delete this box):', box.label);
-      if (next === null) return;
-      next = next.trim();
-      if (next === '') {
+      if (window.confirm('Delete this box?')) {
         var idx = pages[currentPage].boxes.indexOf(box);
         if (idx >= 0) pages[currentPage].boxes.splice(idx, 1);
-      } else {
-        box.label = next;
+        renderPage();
       }
-      renderPage();
     });
 
     return el;
@@ -317,17 +311,12 @@ button:disabled { opacity: 0.4; cursor: default; transform: none; }
 
       if (final.w < 8 || final.h < 8) return; // ignore accidental taps
 
-      var label = window.prompt("What's hidden in this box?", '');
-      if (label === null) return;
-      label = label.trim();
-      if (!label) return;
-
       pages[currentPage].boxes.push({
         x: round1((final.left / rect.width) * 100),
         y: round1((final.top / rect.height) * 100),
         w: round1((final.w / rect.width) * 100),
         h: round1((final.h / rect.height) * 100),
-        label: label
+        label: ''
       });
       renderPage();
     }
@@ -346,7 +335,8 @@ button:disabled { opacity: 0.4; cursor: default; transform: none; }
       var parts = [];
       for (var j = 0; j < boxes.length; j++) {
         var b = boxes[j];
-        parts.push(b.x + ',' + b.y + ',' + b.w + ',' + b.h + '=' + b.label);
+        var coords = b.x + ',' + b.y + ',' + b.w + ',' + b.h;
+        parts.push(b.label ? (coords + '=' + b.label) : coords);
         totalBoxes++;
       }
       blocks.push((i + 1) + ':' + parts.join('; '));
