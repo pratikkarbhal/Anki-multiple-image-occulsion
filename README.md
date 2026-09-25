@@ -1,5 +1,3 @@
-https://pratikkarbhal.github.io/Anki-multiple-image-occulsion/
-
 # Image Occlusion for Anki (AnkiDroid)
 
 Cover parts of an image, tap a box to reveal it — all in a **single** Anki card. Unlike Anki's built-in Image Occlusion, this doesn't split into one card per masked region.
@@ -9,7 +7,7 @@ Cover parts of an image, tap a box to reveal it — all in a **single** Anki car
 - `occlusion_front_template.html` — Front Template
 - `occlusion_back_template.html` — Back Template
 - `occlusion_styling.css` — Styling
-- ![box-picker.html](https://pratikkarbhal.github.io/Anki-multiple-image-occulsion/) — standalone tool to draw boxes visually and generate the coordinate data for you
+- ![box-picker](https://pratikkarbhal.github.io/Anki-multiple-image-occulsion/) — standalone tool to draw boxes visually and generate the coordinate data for you
 
 ## Setup
 
@@ -30,7 +28,7 @@ If your images live in a field named something other than `Front`, find-and-repl
 
 Drawing coordinates by hand is painful, so this tool does it visually instead.
 
-1. Open `box-picker.html` in any browser — phone or desktop, no install needed
+1. Open ![`box-picker.html`](https://pratikkarbhal.github.io/Anki-multiple-image-occulsion/) in any browser — phone or desktop, no install needed
 2. Tap **+ Add Page(s)**, select your images in the **same order** they appear on the Anki card
 3. All pages stack, scrollable, like a document — drag directly on any image to draw a box, no typing required
 4. Tap an existing box to delete it. Use ▲▼🗑 in a page's header to reorder or remove a page
