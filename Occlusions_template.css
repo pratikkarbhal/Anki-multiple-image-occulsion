@@ -1,0 +1,116 @@
+.card {
+  font-family: -apple-system, Roboto, "Segoe UI", Helvetica, Arial, sans-serif;
+  color: #1a1a1a;
+  background-color: #fafafa;
+  text-align: center;
+  padding: 4px;
+}
+
+.occ-instruction {
+  font-size: 1em;
+  color: #666;
+  margin: 6px 0 14px;
+}
+
+.occ-wrap {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.occ-wrap img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.occ-holder {
+  position: relative;
+  width: 100%;
+  margin: 0 auto 18px;
+  line-height: 0; /* prevents a stray gap under the image */
+}
+
+.occ-mask {
+  position: absolute;
+  box-sizing: border-box;
+  min-width: 26px;
+  min-height: 22px;
+  background: #f5b942;
+  border: 2px solid #c9860a;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  overflow: hidden;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  transition: background-color .15s ease, border-color .15s ease;
+}
+
+.occ-mask:not(.occ-revealed)::after {
+  content: "?";
+  font-weight: 700;
+  font-size: 0.9em;
+  color: #7a4d00;
+}
+
+.occ-mask .occ-label {
+  display: none;
+  font-size: 0.78em;
+  font-weight: 700;
+  color: #14532d;
+  text-align: center;
+  line-height: 1.15;
+  word-break: break-word;
+}
+
+.occ-mask.occ-revealed {
+  background: rgba(217, 242, 221, 0.97);
+  border-color: #2e7d32;
+}
+
+.occ-mask.occ-revealed .occ-label {
+  display: block;
+}
+
+.occ-mask.occ-locked {
+  cursor: default;
+}
+
+/* Boxes drawn with no label just disappear on reveal, showing whatever
+   is already on the image underneath, instead of turning into a green tile. */
+.occ-mask.occ-blank.occ-revealed {
+  background: transparent;
+  border-color: transparent;
+  opacity: 0;
+}
+
+/* Night mode */
+.night_mode .card,
+.card.night_mode {
+  background-color: #1e1e1e;
+  color: #eee;
+}
+
+.night_mode .occ-instruction { color: #aaa; }
+
+.night_mode .occ-mask {
+  background: #6b4e14;
+  border-color: #a9781f;
+}
+
+.night_mode .occ-mask:not(.occ-revealed)::after {
+  color: #f0d9a0;
+}
+
+.night_mode .occ-mask.occ-revealed {
+  background: rgba(18, 60, 28, 0.95);
+  border-color: #3fae4c;
+}
+
+.night_mode .occ-mask.occ-revealed .occ-label {
+  color: #b6f2c1;
+}
