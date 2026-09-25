@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Occlusion Box Picker</title>
+<style>
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, Roboto, "Segoe UI", Helvetica, Arial, sans-serif;
+  margin: 0;
+  padding: 16px;
+  background: #f7f7fa;
+  color: #1a1a1a;
+}
+.wrap { max-width: 640px; margin: 0 auto; }
+h1 { font-size: 1.35em; margin: 0 0 4px; }
+.hint { color: #666; font-size: 0.9em; margin: 4px 0 12px; line-height: 1.4; }
+
+.toolbar, .page-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.page-nav { align-items: center; }
+
+button {
+  padding: 10px 14px;
+  font-size: 0.95em;
+  border: 2px solid #3b82f6;
+  border-radius: 8px;
+  background: #eaf1fe;
+  color: #1a3a7a;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+button.danger { border-color: #c62828; background: #fde3e2; color: #7f1d1d; }
+button.primary { border-color: #2e7d32; background: #d9f2dd; color: #14532d; font-weight: 700; }
+button:active { transform: scale(0.97); }
+button:disabled { opacity: 0.4; cursor: default; transform: none; }
+
+#pageLabel { font-weight: 600; margin: 0 6px; }
+
+.empty {
+  border: 2px dashed #ccc;
+  border-radius: 10px;
+  padding: 40px 16px;
+  text-align: center;
+  color: #888;
+}
+
+#stage {
+  position: relative;
+  width: 100%;
+  line-height: 0;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  overflow: hidden;
+  touch-action: none;
+  background: #fff;
+}
+#stageImg {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+  touch-action: none;
+}
+
+.box-draft {
+  position: absolute;
+  border: 2px dashed #3b82f6;
+  background: rgba(59,130,246,0.15);
+  pointer-events: none;
+}
+
+.box-final {
+  position: absolute;
+  box-sizing: border-box;
+  min-width: 22px;
+  min-height: 20px;
+  border: 2px solid #c9860a;
+  background: rgba(245,185,66,0.85);
+  color: #4a3000;
+  font-size: 0.72em;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2px;
+  overflow: hidden;
+  cursor: pointer;
+  touch-action: manipulation;
+  line-height: 1.1;
+}
+
+.output-section { margin-top: 22px; }
+#output {
+  width: 100%;
+  min-height: 90px;
+  margin: 10px 0;
+  padding: 10px;
+  font-family: monospace;
+  font-size: 0.83em;
+  border: 2px solid #d0d0d5;
+  border-radius: 8px;
+  resize: vertical;
+}
+#copyStatus { color: #2e7d32; font-weight: 600; min-height: 1.2em; font-size: 0.9em; }
+#pageCount { color: #666; font-size: 0.85em; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Occlusion Box Picker</h1>
+  <p class="hint">Add your page images <strong>in the same order</strong> they appear in your Anki card. Drag on an image to draw a box, then type what's hidden there. Tap an existing box to edit or delete it. When every page is done, hit <strong>Generate Code</strong> and copy the result into your Anki "Occlusions" field.</p>
+
+  <div class="toolbar">
+    <button id="addPageBtn">+ Add Page(s)</button>
+    <input type="file" id="fileInput" accept="image/*" multiple style="display:none">
+    <button id="resetBtn" class="danger">Reset All</button>
+  </div>
+
+  <div id="pageNav" class="page-nav" style="display:none">
+    <button id="prevBtn">‹ Prev</button>
+    <span id="pageLabel">Page 1 of 1</span>
+    <button id="nextBtn">Next ›</button>
+    <button id="moveUpBtn" title="Move this page earlier">▲</button>
+    <button id="moveDownBtn" title="Move this page later">▼</button>
+    <button id="deletePageBtn" class="danger">🗑 Page</button>
+  </div>
+
+  <div id="emptyState" class="empty">No pages yet — tap "+ Add Page(s)" to load your first image.</div>
+
+  <div id="stageWrap" style="display:none">
+    <div id="stage">
+      <img id="stageImg" draggable="false">
+    </div>
+  </div>
+
+  <div class="output-section">
+    <button id="generateBtn" class="primary">Generate Code</button>
+    <div id="pageCount"></div>
+    <textarea id="output" readonly placeholder="Your generated code will appear here..."></textarea>
+    <button id="copyBtn">Copy to Clipboard</button>
+    <div id="copyStatus"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var pages = []; // { url, boxes: [{x,y,w,h,label}] }
+  var currentPage = 0;
+
+  var addPageBtn = document.getElementById('addPageBtn');
+  var fileInput = document.getElementById('fileInput');
+  var resetBtn = document.getElementById('resetBtn');
+  var pageNav = document.getElementById('pageNav');
+  var pageLabel = document.getElementById('pageLabel');
+  var prevBtn = document.getElementById('prevBtn');
+  var nextBtn = document.getElementById('nextBtn');
+  var moveUpBtn = document.getElementById('moveUpBtn');
+  var moveDownBtn = document.getElementById('moveDownBtn');
+  var deletePageBtn = document.getElementById('deletePageBtn');
+  var emptyState = document.getElementById('emptyState');
+  var stageWrap = document.getElementById('stageWrap');
+  var stage = document.getElementById('stage');
+  var stageImg = document.getElementById('stageImg');
+  var generateBtn = document.getElementById('generateBtn');
+  var output = document.getElementById('output');
+  var copyBtn = document.getElementById('copyBtn');
+  var copyStatus = document.getElementById('copyStatus');
+  var pageCount = document.getElementById('pageCount');
+
+  function round1(n) { return Math.round(n * 10) / 10; }
+
+  function makeBoxEl(box) {
+    var el = document.createElement('div');
+    el.className = 'box-final';
+    el.style.left = box.x + '%';
+    el.style.top = box.y + '%';
+    el.style.width = box.w + '%';
+    el.style.height = box.h + '%';
+    el.textContent = box.label;
+
+    el.addEventListener('pointerdown', function (ev) { ev.stopPropagation(); });
+
+    el.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      var next = window.prompt('Edit label (clear the text to delete this box):', box.label);
+      if (next === null) return;
+      next = next.trim();
+      if (next === '') {
+        var idx = pages[currentPage].boxes.indexOf(box);
+        if (idx >= 0) pages[currentPage].boxes.splice(idx, 1);
+      } else {
+        box.label = next;
+      }
+      renderPage();
+    });
+
+    return el;
+  }
+
+  function renderPage() {
+    var has = pages.length > 0;
+    emptyState.style.display = has ? 'none' : 'block';
+    stageWrap.style.display = has ? 'block' : 'none';
+    pageNav.style.display = has ? 'flex' : 'none';
+    if (!has) return;
+
+    pageLabel.textContent = 'Page ' + (currentPage + 1) + ' of ' + pages.length;
+    stageImg.src = pages[currentPage].url;
+
+    var existing = stage.querySelectorAll('.box-final');
+    for (var i = 0; i < existing.length; i++) existing[i].remove();
+
+    var boxes = pages[currentPage].boxes;
+    for (var j = 0; j < boxes.length; j++) {
+      stage.appendChild(makeBoxEl(boxes[j]));
+    }
+  }
+
+  addPageBtn.addEventListener('click', function () { fileInput.click(); });
+
+  fileInput.addEventListener('change', function (ev) {
+    var files = Array.prototype.slice.call(ev.target.files);
+    if (!files.length) return;
+    var firstNew = pages.length;
+    for (var i = 0; i < files.length; i++) {
+      pages.push({ url: URL.createObjectURL(files[i]), boxes: [] });
+    }
+    currentPage = firstNew;
+    renderPage();
+    fileInput.value = '';
+  });
+
+  resetBtn.addEventListener('click', function () {
+    if (!pages.length) return;
+    if (!window.confirm('Clear every page and box? This cannot be undone.')) return;
+    pages = [];
+    currentPage = 0;
+    output.value = '';
+    renderPage();
+  });
+
+  prevBtn.addEventListener('click', function () {
+    if (currentPage > 0) { currentPage--; renderPage(); }
+  });
+  nextBtn.addEventListener('click', function () {
+    if (currentPage < pages.length - 1) { currentPage++; renderPage(); }
+  });
+  moveUpBtn.addEventListener('click', function () {
+    if (currentPage > 0) {
+      var tmp = pages[currentPage - 1];
+      pages[currentPage - 1] = pages[currentPage];
+      pages[currentPage] = tmp;
+      currentPage--;
+      renderPage();
+    }
+  });
+  moveDownBtn.addEventListener('click', function () {
+    if (currentPage < pages.length - 1) {
+      var tmp = pages[currentPage + 1];
+      pages[currentPage + 1] = pages[currentPage];
+      pages[currentPage] = tmp;
+      currentPage++;
+      renderPage();
+    }
+  });
+  deletePageBtn.addEventListener('click', function () {
+    if (!pages.length) return;
+    if (!window.confirm('Delete this page and its boxes?')) return;
+    pages.splice(currentPage, 1);
+    if (currentPage >= pages.length) currentPage = Math.max(0, pages.length - 1);
+    renderPage();
+  });
+
+  // Draw a new box by dragging on the stage background (not on an existing box)
+  stage.addEventListener('pointerdown', function (ev) {
+    if (!pages.length) return;
+    var rect = stageImg.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+
+    var startX = Math.max(0, Math.min(ev.clientX - rect.left, rect.width));
+    var startY = Math.max(0, Math.min(ev.clientY - rect.top, rect.height));
+
+    var draft = document.createElement('div');
+    draft.className = 'box-draft';
+    stage.appendChild(draft);
+
+    function update(clientX, clientY) {
+      var curX = Math.max(0, Math.min(clientX - rect.left, rect.width));
+      var curY = Math.max(0, Math.min(clientY - rect.top, rect.height));
+      var left = Math.min(startX, curX);
+      var top = Math.min(startY, curY);
+      var w = Math.abs(curX - startX);
+      var h = Math.abs(curY - startY);
+      draft.style.left = left + 'px';
+      draft.style.top = top + 'px';
+      draft.style.width = w + 'px';
+      draft.style.height = h + 'px';
+      return { left: left, top: top, w: w, h: h };
+    }
+
+    function onMove(mv) { update(mv.clientX, mv.clientY); }
+
+    function onUp(upEv) {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      var final = update(upEv.clientX, upEv.clientY);
+      if (draft.parentNode) draft.parentNode.removeChild(draft);
+
+      if (final.w < 8 || final.h < 8) return; // ignore accidental taps
+
+      var label = window.prompt("What's hidden in this box?", '');
+      if (label === null) return;
+      label = label.trim();
+      if (!label) return;
+
+      pages[currentPage].boxes.push({
+        x: round1((final.left / rect.width) * 100),
+        y: round1((final.top / rect.height) * 100),
+        w: round1((final.w / rect.width) * 100),
+        h: round1((final.h / rect.height) * 100),
+        label: label
+      });
+      renderPage();
+    }
+
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    ev.preventDefault();
+  });
+
+  generateBtn.addEventListener('click', function () {
+    var blocks = [];
+    var totalBoxes = 0;
+    for (var i = 0; i < pages.length; i++) {
+      var boxes = pages[i].boxes;
+      if (!boxes.length) continue;
+      var parts = [];
+      for (var j = 0; j < boxes.length; j++) {
+        var b = boxes[j];
+        parts.push(b.x + ',' + b.y + ',' + b.w + ',' + b.h + '=' + b.label);
+        totalBoxes++;
+      }
+      blocks.push((i + 1) + ':' + parts.join('; '));
+    }
+    output.value = blocks.join(' || ');
+    pageCount.textContent = totalBoxes + ' box(es) across ' + blocks.length + ' of ' + pages.length + ' page(s).';
+  });
+
+  copyBtn.addEventListener('click', function () {
+    if (!output.value) {
+      copyStatus.textContent = 'Nothing to copy — tap Generate Code first.';
+      return;
+    }
+    function done(ok) {
+      copyStatus.textContent = ok ? 'Copied!' : 'Copy failed — select the text manually.';
+      setTimeout(function () { copyStatus.textContent = ''; }, 2000);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(output.value).then(function () { done(true); }, function () { fallback(); });
+    } else {
+      fallback();
+    }
+    function fallback() {
+      output.select();
+      try {
+        document.execCommand('copy');
+        done(true);
+      } catch (e) {
+        done(false);
+      }
+    }
+  });
+
+  renderPage();
+})();
+</script>
+</body>
+</html>
