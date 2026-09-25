@@ -7,7 +7,7 @@ Cover parts of an image, tap a box to reveal it — all in a **single** Anki car
 - `occlusion_front_template.html` — Front Template
 - `occlusion_back_template.html` — Back Template
 - `occlusion_styling.css` — Styling
-- ![box-picker](https://pratikkarbhal.github.io/Anki-multiple-image-occulsion/) — standalone tool to draw boxes visually and generate the coordinate data for you
+- [box-picker](https://pratikkarbhal.github.io/Anki-multiple-image-occulsion/) — standalone tool to draw boxes visually and generate the coordinate data for you
 
 ## Setup
 
