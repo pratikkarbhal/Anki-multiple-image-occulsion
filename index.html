@@ -42,6 +42,7 @@ button {
 }
 button.danger { border-color: #c62828; background: #fde3e2; color: #7f1d1d; }
 button.primary { border-color: #2e7d32; background: #d9f2dd; color: #14532d; font-weight: 700; }
+button.secondary { border-color: #6b7280; background: #f3f4f6; color: #374151; font-weight: 700; }
 button:active { transform: scale(0.97); }
 button:disabled { opacity: 0.4; cursor: default; transform: none; }
 
@@ -117,10 +118,10 @@ button:disabled { opacity: 0.4; cursor: default; transform: none; }
 }
 
 .output-section { margin-top: 22px; }
+.output-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
 #output {
   width: 100%;
   min-height: 90px;
-  margin: 10px 0;
   padding: 10px;
   font-family: monospace;
   font-size: 0.83em;
@@ -128,14 +129,14 @@ button:disabled { opacity: 0.4; cursor: default; transform: none; }
   border-radius: 8px;
   resize: vertical;
 }
-#copyStatus { color: #2e7d32; font-weight: 600; min-height: 1.2em; font-size: 0.9em; }
-#pageCount { color: #666; font-size: 0.85em; margin-top: 4px; }
+#copyStatus { color: #2e7d32; font-weight: 600; min-height: 1.2em; font-size: 0.9em; margin-top: 8px; }
+#pageCount { color: #666; font-size: 0.85em; margin-bottom: 8px; font-weight: bold; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Occlusion Box Picker</h1>
-  <p class="hint">Add your page images <strong>in the same order</strong> they appear in your Anki card. Scroll down through all of them and drag directly on any image to draw a box — no typing needed. Tap an existing box to delete it. When you're done, hit <strong>Generate Code</strong> and copy the result into your Anki "Occlusions" field.</p>
+  <p class="hint"><strong>1.</strong> Add your page images in order.<br><strong>2.</strong> Draw boxes to create occlusions, OR paste old code into the box below and click "Load Code" to edit existing ones.<br><strong>3.</strong> Hit Generate Code when finished.</p>
 
   <div class="toolbar">
     <button id="addPageBtn">+ Add Page(s)</button>
@@ -148,10 +149,14 @@ button:disabled { opacity: 0.4; cursor: default; transform: none; }
   <div id="pagesContainer"></div>
 
   <div class="output-section">
-    <button id="generateBtn" class="primary">Generate Code</button>
-    <div id="pageCount"></div>
-    <textarea id="output" readonly placeholder="Your generated code will appear here..."></textarea>
-    <button id="copyBtn">Copy to Clipboard</button>
+    <div id="pageCount">Code Output / Importer:</div>
+    <textarea id="output" placeholder="Paste old code here to load it, or click Generate Code to create new code..."></textarea>
+    
+    <div class="output-actions" style="margin-top: 10px;">
+      <button id="loadBtn" class="secondary">Load Code</button>
+      <button id="generateBtn" class="primary">Generate Code</button>
+      <button id="copyBtn">Copy to Clipboard</button>
+    </div>
     <div id="copyStatus"></div>
   </div>
 </div>
@@ -165,6 +170,8 @@ button:disabled { opacity: 0.4; cursor: default; transform: none; }
   var resetBtn = document.getElementById('resetBtn');
   var emptyState = document.getElementById('emptyState');
   var pagesContainer = document.getElementById('pagesContainer');
+  
+  var loadBtn = document.getElementById('loadBtn');
   var generateBtn = document.getElementById('generateBtn');
   var output = document.getElementById('output');
   var copyBtn = document.getElementById('copyBtn');
@@ -195,8 +202,6 @@ button:disabled { opacity: 0.4; cursor: default; transform: none; }
     return el;
   }
 
-  // Each page gets its own independent drag-to-draw listener, scoped by
-  // pageIndex, so drawing on page 3 never affects page 1's box list.
   function wireStageDrawing(stageEl, imgEl, pageIndex) {
     stageEl.addEventListener('pointerdown', function (ev) {
       var rect = imgEl.getBoundingClientRect();
@@ -347,8 +352,88 @@ button:disabled { opacity: 0.4; cursor: default; transform: none; }
     if (!window.confirm('Clear every page and box? This cannot be undone.')) return;
     pages = [];
     output.value = '';
-    pageCount.textContent = '';
+    pageCount.textContent = 'Code Output / Importer:';
     renderAll();
+  });
+
+  // --- NEW: Load Code Feature ---
+  loadBtn.addEventListener('click', function () {
+    var code = output.value.trim();
+    if (!code) {
+      alert('Please paste some code into the text area first.');
+      return;
+    }
+    if (pages.length === 0) {
+      alert('Please add your image(s) first before loading the code.');
+      return;
+    }
+    if (!window.confirm('This will replace current boxes with the ones from the code. Proceed?')) {
+      return;
+    }
+
+    // Clear existing boxes to make room for imported ones
+    for (var p = 0; p < pages.length; p++) {
+      pages[p].boxes = [];
+    }
+
+    var blocks = code.split('||');
+    var loadedBoxes = 0;
+    var missingPages = 0;
+
+    for (var i = 0; i < blocks.length; i++) {
+      var block = blocks[i].trim();
+      if (!block) continue;
+
+      var colonIdx = block.indexOf(':');
+      if (colonIdx === -1) continue;
+
+      var pageNumStr = block.substring(0, colonIdx).trim();
+      var pageIndex = parseInt(pageNumStr, 10) - 1; // 1-based back to 0-based index
+
+      // If the code references a page number higher than what's uploaded, skip it
+      if (isNaN(pageIndex) || pageIndex < 0 || pageIndex >= pages.length) {
+        missingPages++;
+        continue;
+      }
+
+      var boxesStr = block.substring(colonIdx + 1).trim();
+      if (!boxesStr) continue;
+
+      var boxParts = boxesStr.split(';');
+      for (var j = 0; j < boxParts.length; j++) {
+        var bp = boxParts[j].trim();
+        if (!bp) continue;
+
+        // Extract label if present (e.g., 10,20,30,40=MyLabel)
+        var label = '';
+        var eqIdx = bp.indexOf('=');
+        if (eqIdx !== -1) {
+          label = bp.substring(eqIdx + 1).trim();
+          bp = bp.substring(0, eqIdx).trim();
+        }
+
+        var coords = bp.split(',');
+        if (coords.length === 4) {
+          var x = parseFloat(coords[0]);
+          var y = parseFloat(coords[1]);
+          var w = parseFloat(coords[2]);
+          var h = parseFloat(coords[3]);
+
+          if (!isNaN(x) && !isNaN(y) && !isNaN(w) && !isNaN(h)) {
+            pages[pageIndex].boxes.push({ x: x, y: y, w: w, h: h, label: label });
+            loadedBoxes++;
+          }
+        }
+      }
+    }
+
+    renderAll();
+    
+    var statusText = 'Loaded ' + loadedBoxes + ' box(es).';
+    if (missingPages > 0) {
+      statusText += ' (Note: Data for ' + missingPages + ' page(s) was skipped because there are not enough images uploaded)';
+    }
+    pageCount.textContent = statusText;
   });
 
   generateBtn.addEventListener('click', function () {
@@ -361,13 +446,14 @@ button:disabled { opacity: 0.4; cursor: default; transform: none; }
       for (var j = 0; j < boxes.length; j++) {
         var b = boxes[j];
         var coords = b.x + ',' + b.y + ',' + b.w + ',' + b.h;
+        // Preserves custom labels if they existed in loaded code!
         parts.push(b.label ? (coords + '=' + b.label) : coords);
         totalBoxes++;
       }
       blocks.push((i + 1) + ':' + parts.join('; '));
     }
     output.value = blocks.join(' || ');
-    pageCount.textContent = totalBoxes + ' box(es) across ' + blocks.length + ' of ' + pages.length + ' page(s).';
+    pageCount.textContent = 'Generated: ' + totalBoxes + ' box(es) across ' + blocks.length + ' of ' + pages.length + ' page(s).';
   });
 
   copyBtn.addEventListener('click', function () {
