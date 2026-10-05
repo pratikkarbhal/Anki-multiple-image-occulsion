@@ -567,4 +567,65 @@
 
   // --- Event Listeners ---
 
-  els.addBtn.addEventLi
+  els.addBtn.addEventListener('click', () => els.fileInput.click());
+
+  els.fileInput.addEventListener('change', ev => {
+    let files = Array.from(ev.target.files);
+    if (!files.length) return;
+    
+    // Check if we have session data to auto-apply to these new images
+    let savedCode = sessionStorage.getItem(SESSION_KEY) || "";
+    
+    let startIndex = pages.length;
+    files.forEach(file => {
+      pages.push({ fileUrl: URL.createObjectURL(file), boxes: [] });
+    });
+    
+    // Try to auto-restore layout from session
+    if(savedCode) {
+        applyMasterCodeToPages(savedCode);
+    } else {
+        renderAll();
+    }
+    els.fileInput.value = '';
+  });
+
+  els.copyAllBtn.addEventListener('click', () => {
+    let code = generateMasterCode();
+    if (!code) return showToast("No boxes to copy!");
+    navigator.clipboard.writeText(code).then(() => {
+      showToast("✅ Code Copied to Clipboard!");
+    }).catch(err => {
+      prompt("Copy this code:", code);
+    });
+  });
+
+  els.resetBtn.addEventListener('click', () => {
+    if (!confirm('Clear all images and boxes?')) return;
+    pages = [];
+    sessionStorage.removeItem(SESSION_KEY);
+    renderAll();
+  });
+
+  els.toggleImportBtn.addEventListener('click', () => {
+    els.masterPasteArea.classList.toggle('open');
+    if(els.masterPasteArea.classList.contains('open')) {
+      els.masterPasteCode.value = generateMasterCode();
+    }
+  });
+
+  els.applyMasterCodeBtn.addEventListener('click', () => {
+    applyMasterCodeToPages(els.masterPasteCode.value);
+    els.masterPasteArea.classList.remove('open');
+    showToast("✅ Old code loaded!");
+  });
+
+  // Initial load check (if page refreshed, notify user they can restore by adding images)
+  if(sessionStorage.getItem(SESSION_KEY)) {
+      console.log("Found session data, ready to apply when images are uploaded.");
+  }
+
+})();
+</script>
+</body>
+</html>
