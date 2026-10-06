@@ -58,16 +58,22 @@
   .btn-outline { background: white; color: #334155; border: 1px solid #cbd5e1; }
   .btn-outline:hover { background: #f1f5f9; }
 
-  /* Master Paste Tool */
-  .master-paste-area {
-    display: none; width: 100%; margin-top: 10px; padding: 12px;
-    background: white; border: 1px solid var(--border); border-radius: 8px;
+  /* Full Code Panel (top) */
+  .full-code-panel {
+    background: white; border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);
   }
-  .master-paste-area.open { display: block; }
-  .master-paste-area textarea {
-    width: 100%; height: 60px; padding: 8px; font-family: monospace;
-    border: 1px solid #cbd5e1; border-radius: 4px; resize: vertical; margin-bottom: 8px;
+  .full-code-panel .panel-head {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
   }
+  .full-code-panel label { font-size: 0.85rem; font-weight: 600; color: #475569; flex-grow: 1; }
+  .full-code-panel textarea {
+    width: 100%; height: 90px; padding: 8px; font-family: monospace; font-size: 0.85rem;
+    border: 1px solid #cbd5e1; border-radius: 6px; resize: vertical; line-height: 1.5;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .full-code-panel textarea:focus, .sidebar textarea:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
+  .btn-small { padding: 4px 10px; font-size: 0.8rem; }
 
   /* Empty State */
   .empty {
@@ -109,11 +115,12 @@
     flex: 1 1 30%; display: flex; flex-direction: column; padding: 12px;
     background: #fafafa; min-width: 250px;
   }
-  .sidebar label { font-size: 0.85rem; font-weight: 600; color: #475569; margin-bottom: 6px; }
+  .sidebar .side-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .sidebar label { font-size: 0.85rem; font-weight: 600; color: #475569; flex-grow: 1; }
   .sidebar textarea {
     flex-grow: 1; min-height: 120px; padding: 8px; font-family: monospace; font-size: 0.85rem;
     border: 1px solid #cbd5e1; border-radius: 6px; resize: vertical; line-height: 1.5;
-    white-space: pre; overflow-wrap: normal; overflow-x: auto;
+    white-space: pre-wrap; word-break: break-all;
   }
   .sidebar .help-text { font-size: 0.75rem; color: #64748b; margin-top: 8px; line-height: 1.4; }
 
@@ -157,7 +164,7 @@
 <div class="wrap">
   <div class="top-header">
     <h1>Occlusion Box Picker</h1>
-    <p>Draw boxes on the images. Edit coordinates in the side-panels in real-time. Everything is auto-saved.</p>
+    <p>Draw boxes on the images. The full code above and each image's fragment on its side stay identical: edit either one, or drag the boxes.</p>
   </div>
 
   <div class="toolbar">
@@ -166,14 +173,15 @@
     
     <button id="copyAllBtn" class="btn-success">📋 Copy Final Code</button>
     
-    <button id="toggleImportBtn" class="btn-outline">↓ Import Old Code</button>
     <button id="resetBtn" class="btn-danger" style="margin-left: auto;">🗑 Clear All</button>
+  </div>
 
-    <div id="masterPasteArea" class="master-paste-area">
-      <label style="display:block; font-size: 0.85rem; font-weight:600; margin-bottom:4px;">Paste global Anki code (e.g., 1:10,20... || 2:...) and click Load:</label>
-      <textarea id="masterPasteCode" placeholder="1: 10.5,20,30,40=Label || 2: ..."></textarea>
-      <button id="applyMasterCodeBtn" class="btn-primary">Apply to Current Pages</button>
+  <div class="full-code-panel">
+    <div class="panel-head">
+      <label for="fullCode">Full code (editable, synced with every image's fragment)</label>
+      <button id="copyAllBtn2" class="btn-success btn-small">📋 Copy</button>
     </div>
+    <textarea id="fullCode" spellcheck="false" placeholder="1:10,20,30,40; 15,25,10,10=Label || 2:..."></textarea>
   </div>
 
   <div id="emptyState" class="empty">
@@ -189,65 +197,82 @@
 <script>
 (function() {
   const SESSION_KEY = 'anki_occlusion_code';
-  let pages = []; // [{ fileUrl, boxes: [{x, y, w, h, label}] }]
+  let pages = [];    // [{ fileUrl, boxes: [{x, y, w, h, label}] }]
+  let pending = {};  // { pageNumber: "box string" } for pages whose image isn't loaded yet
 
   const els = {
     fileInput: document.getElementById('fileInput'),
     addBtn: document.getElementById('addBtn'),
     resetBtn: document.getElementById('resetBtn'),
     copyAllBtn: document.getElementById('copyAllBtn'),
+    copyAllBtn2: document.getElementById('copyAllBtn2'),
+    fullCode: document.getElementById('fullCode'),
     emptyState: document.getElementById('emptyState'),
     container: document.getElementById('pagesContainer'),
-    toggleImportBtn: document.getElementById('toggleImportBtn'),
-    masterPasteArea: document.getElementById('masterPasteArea'),
-    masterPasteCode: document.getElementById('masterPasteCode'),
-    applyMasterCodeBtn: document.getElementById('applyMasterCodeBtn'),
     toast: document.getElementById('toast')
   };
 
   // --- Utilities ---
   function round1(n) { return Math.round(n * 10) / 10; }
-  
+
   function showToast(msg) {
     els.toast.textContent = msg;
     els.toast.classList.add('show');
     setTimeout(() => els.toast.classList.remove('show'), 2500);
   }
 
-  // --- Core State Management & Parsing ---
-  
+  function copyText(text, okMsg) {
+    if (!text) return showToast("Nothing to copy!");
+    navigator.clipboard.writeText(text).then(() => showToast(okMsg)).catch(() => prompt("Copy this code:", text));
+  }
+
+  // --- Code generation ---
+
+  function boxesToString(boxes) {
+    return boxes.map(b => {
+      let str = `${b.x},${b.y},${b.w},${b.h}`;
+      if (b.label) str += `=${b.label}`;
+      return str;
+    }).join('; ');
+  }
+
+  // The exact fragment for one image, e.g. "2:10,20,30,40; 5,5,10,10=Label"
+  function fragmentFor(i) {
+    let boxes = pages[i].boxes;
+    return boxes.length ? `${i + 1}:${boxesToString(boxes)}` : '';
+  }
+
   function generateMasterCode() {
     let blocks = [];
     for (let i = 0; i < pages.length; i++) {
-      let boxes = pages[i].boxes;
-      if (!boxes.length) continue;
-      let parts = boxes.map(b => {
-        let str = `${b.x},${b.y},${b.w},${b.h}`;
-        if (b.label) str += `=${b.label}`;
-        return str;
-      });
-      blocks.push(`${i + 1}:${parts.join('; ')}`);
+      let f = fragmentFor(i);
+      if (f) blocks.push(f);
     }
+    Object.keys(pending).map(Number).sort((a, b) => a - b).forEach(n => {
+      if (n > pages.length && pending[n]) blocks.push(`${n}:${pending[n]}`);
+    });
     return blocks.join(' || ');
   }
 
   function saveSession() {
-    sessionStorage.setItem(SESSION_KEY, generateMasterCode());
+    sessionStorage.setItem(SESSION_KEY, els.fullCode.value);
   }
+
+  // --- Parsing ---
 
   function parseStringIntoBoxes(str) {
     let boxes = [];
-    let parts = str.split(';');
+    let parts = str.split(/[;\n]/);
     for (let p of parts) {
       p = p.trim();
       if (!p) continue;
       let label = '';
       if (p.includes('=')) {
-        let split = p.split('=');
-        label = split[1].trim();
-        p = split[0].trim();
+        let idx = p.indexOf('=');
+        label = p.substring(idx + 1).trim();
+        p = p.substring(0, idx).trim();
       }
-      let coords = p.split(',').map(Number);
+      let coords = p.split(',').map(t => Number(t.trim()));
       if (coords.length === 4 && coords.every(n => !isNaN(n))) {
         boxes.push({ x: coords[0], y: coords[1], w: coords[2], h: coords[3], label: label });
       }
@@ -255,49 +280,46 @@
     return boxes;
   }
 
-  function applyMasterCodeToPages(code) {
-    if(!code.trim()) return;
-    let blocks = code.split('||');
-    for (let block of blocks) {
+  // Full code -> pages (pages missing from the code get cleared)
+  function applyFullCode(code) {
+    let newBoxes = pages.map(() => []);
+    pending = {};
+    code.split('||').forEach(block => {
       let colonIdx = block.indexOf(':');
-      if (colonIdx === -1) continue;
-      let pageIdx = parseInt(block.substring(0, colonIdx).trim(), 10) - 1;
-      let boxesStr = block.substring(colonIdx + 1).trim();
-      
-      if (pageIdx >= 0 && pageIdx < pages.length) {
-        pages[pageIdx].boxes = parseStringIntoBoxes(boxesStr);
-      }
-    }
-    renderAll();
-    saveSession();
-  }
-
-  // --- Textarea <-> UI Box Syncing ---
-
-  // Converts box objects to textarea string format
-  function updateTextareaUI(pageIndex) {
-    let textarea = document.getElementById(`textarea-${pageIndex}`);
-    if (textarea) {
-      textarea.value = pages[pageIndex].boxes.map(b => {
-        let s = `${b.x},${b.y},${b.w},${b.h}`;
-        return b.label ? s + `=${b.label}` : s;
-      }).join('\n');
-    }
-  }
-
-  // Re-draws the visual boxes for a specific page without full DOM re-render
-  function updateStageUI(pageIndex) {
-    let stage = document.getElementById(`stage-${pageIndex}`);
-    if (!stage) return;
-    
-    // Remove existing boxes
-    let existing = stage.querySelectorAll('.box-final');
-    existing.forEach(e => e.remove());
-    
-    // Add updated boxes
-    pages[pageIndex].boxes.forEach((box, boxIndex) => {
-      stage.appendChild(createBoxElement(pageIndex, boxIndex));
+      if (colonIdx === -1) return;
+      let num = parseInt(block.substring(0, colonIdx).trim(), 10);
+      let body = block.substring(colonIdx + 1).trim();
+      if (isNaN(num) || num < 1) return;
+      if (num <= pages.length) newBoxes[num - 1] = parseStringIntoBoxes(body);
+      else pending[num] = body;
     });
+    pages.forEach((p, i) => { p.boxes = newBoxes[i]; });
+  }
+
+  // --- Syncing: boxes on image <-> fragment (side) <-> full code (top) ---
+
+  function updateFullUI() {
+    els.fullCode.value = generateMasterCode();
+  }
+
+  function updateFragmentUI(i) {
+    let ta = document.getElementById(`textarea-${i}`);
+    if (ta) ta.value = fragmentFor(i);
+  }
+
+  function updateStageUI(i) {
+    let stage = document.getElementById(`stage-${i}`);
+    if (!stage) return;
+    stage.querySelectorAll('.box-final').forEach(e => e.remove());
+    pages[i].boxes.forEach((box, boxIndex) => stage.appendChild(createBoxElement(i, boxIndex)));
+  }
+
+  // Something changed on page i from the image (draw / drag / resize / delete)
+  function syncFromImage(i, redrawStage) {
+    updateFragmentUI(i);
+    updateFullUI();
+    if (redrawStage) updateStageUI(i);
+    saveSession();
   }
 
   // --- Interaction (Drag & Resize) ---
@@ -311,95 +333,68 @@
     el.style.width = boxData.w + '%';
     el.style.height = boxData.h + '%';
 
-    // Delete Button
     let delBtn = document.createElement('div');
     delBtn.className = 'box-delete';
     delBtn.innerHTML = '&times;';
     delBtn.addEventListener('pointerdown', e => {
-      e.stopPropagation(); // prevent drag
+      e.stopPropagation();
       pages[pageIndex].boxes.splice(boxIndex, 1);
-      updateTextareaUI(pageIndex);
-      updateStageUI(pageIndex);
-      saveSession();
+      syncFromImage(pageIndex, true);
     });
     el.appendChild(delBtn);
 
-    // Resize Handle
     let resizeHandle = document.createElement('div');
     resizeHandle.className = 'box-resize';
     el.appendChild(resizeHandle);
 
-    // Move Logic
+    // Move
     el.addEventListener('pointerdown', function(e) {
-      if(e.target === delBtn || e.target === resizeHandle) return;
+      if (e.target === delBtn || e.target === resizeHandle) return;
       e.stopPropagation();
       e.preventDefault();
-      
-      let stage = document.getElementById(`stage-${pageIndex}`);
-      let rect = stage.getBoundingClientRect();
-      
-      let startMouseX = e.clientX;
-      let startMouseY = e.clientY;
-      let startBoxX = boxData.x;
-      let startBoxY = boxData.y;
+
+      let rect = document.getElementById(`stage-${pageIndex}`).getBoundingClientRect();
+      let startMouseX = e.clientX, startMouseY = e.clientY;
+      let startBoxX = boxData.x, startBoxY = boxData.y;
 
       function onMove(me) {
-        let dxPercent = ((me.clientX - startMouseX) / rect.width) * 100;
-        let dyPercent = ((me.clientY - startMouseY) / rect.height) * 100;
-        
-        let newX = Math.max(0, Math.min(startBoxX + dxPercent, 100 - boxData.w));
-        let newY = Math.max(0, Math.min(startBoxY + dyPercent, 100 - boxData.h));
-        
-        boxData.x = round1(newX);
-        boxData.y = round1(newY);
-        
+        let dx = ((me.clientX - startMouseX) / rect.width) * 100;
+        let dy = ((me.clientY - startMouseY) / rect.height) * 100;
+        boxData.x = round1(Math.max(0, Math.min(startBoxX + dx, 100 - boxData.w)));
+        boxData.y = round1(Math.max(0, Math.min(startBoxY + dy, 100 - boxData.h)));
         el.style.left = boxData.x + '%';
         el.style.top = boxData.y + '%';
-        updateTextareaUI(pageIndex);
+        syncFromImage(pageIndex, false);
       }
-
       function onUp() {
         document.removeEventListener('pointermove', onMove);
         document.removeEventListener('pointerup', onUp);
-        saveSession();
       }
       document.addEventListener('pointermove', onMove);
       document.addEventListener('pointerup', onUp);
     });
 
-    // Resize Logic
+    // Resize
     resizeHandle.addEventListener('pointerdown', function(e) {
       e.stopPropagation();
       e.preventDefault();
 
-      let stage = document.getElementById(`stage-${pageIndex}`);
-      let rect = stage.getBoundingClientRect();
-      
-      let startMouseX = e.clientX;
-      let startMouseY = e.clientY;
-      let startBoxW = boxData.w;
-      let startBoxH = boxData.h;
+      let rect = document.getElementById(`stage-${pageIndex}`).getBoundingClientRect();
+      let startMouseX = e.clientX, startMouseY = e.clientY;
+      let startBoxW = boxData.w, startBoxH = boxData.h;
 
       function onMove(me) {
-        let dwPercent = ((me.clientX - startMouseX) / rect.width) * 100;
-        let dhPercent = ((me.clientY - startMouseY) / rect.height) * 100;
-        
-        // Min size 2%, max size constrained by stage boundaries
-        let newW = Math.max(2, Math.min(startBoxW + dwPercent, 100 - boxData.x));
-        let newH = Math.max(2, Math.min(startBoxH + dhPercent, 100 - boxData.y));
-        
-        boxData.w = round1(newW);
-        boxData.h = round1(newH);
-        
+        let dw = ((me.clientX - startMouseX) / rect.width) * 100;
+        let dh = ((me.clientY - startMouseY) / rect.height) * 100;
+        boxData.w = round1(Math.max(2, Math.min(startBoxW + dw, 100 - boxData.x)));
+        boxData.h = round1(Math.max(2, Math.min(startBoxH + dh, 100 - boxData.y)));
         el.style.width = boxData.w + '%';
         el.style.height = boxData.h + '%';
-        updateTextareaUI(pageIndex);
+        syncFromImage(pageIndex, false);
       }
-
       function onUp() {
         document.removeEventListener('pointermove', onMove);
         document.removeEventListener('pointerup', onUp);
-        saveSession();
       }
       document.addEventListener('pointermove', onMove);
       document.addEventListener('pointerup', onUp);
@@ -409,11 +404,11 @@
   }
 
   // --- Stage Drawing (Creating New Boxes) ---
-  
+
   function wireStageDrawing(stageEl, pageIndex) {
     stageEl.addEventListener('pointerdown', function(ev) {
-      if(ev.target !== stageEl && ev.target.tagName !== 'IMG') return; // Don't trigger if clicking existing box
-      
+      if (ev.target !== stageEl && ev.target.tagName !== 'IMG') return;
+
       let rect = stageEl.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return;
 
@@ -431,7 +426,6 @@
         let top = Math.min(startY, curY);
         let w = Math.abs(curX - startX);
         let h = Math.abs(curY - startY);
-        
         draft.style.left = left + 'px';
         draft.style.top = top + 'px';
         draft.style.width = w + 'px';
@@ -447,7 +441,7 @@
         let final = update(upEv.clientX, upEv.clientY);
         if (draft.parentNode) draft.parentNode.removeChild(draft);
 
-        if (final.w > 5 && final.h > 5) { // Minimum threshold to prevent tap-glitches
+        if (final.w > 5 && final.h > 5) {
           pages[pageIndex].boxes.push({
             x: round1((final.left / rect.width) * 100),
             y: round1((final.top / rect.height) * 100),
@@ -455,9 +449,7 @@
             h: round1((final.h / rect.height) * 100),
             label: ''
           });
-          updateTextareaUI(pageIndex);
-          updateStageUI(pageIndex);
-          saveSession();
+          syncFromImage(pageIndex, true);
         }
       }
       document.addEventListener('pointermove', onMove);
@@ -467,7 +459,7 @@
   }
 
   // --- Main Rendering ---
-  
+
   function renderAll() {
     let has = pages.length > 0;
     els.emptyState.style.display = has ? 'none' : 'block';
@@ -482,85 +474,94 @@
       let header = document.createElement('div');
       header.className = 'page-header';
       header.innerHTML = `<h3>Page ${index + 1}</h3>`;
-      
+
       let upBtn = document.createElement('button');
       upBtn.className = 'btn-outline'; upBtn.innerHTML = '▲'; upBtn.disabled = index === 0;
       upBtn.onclick = () => {
         [pages[index - 1], pages[index]] = [pages[index], pages[index - 1]];
-        renderAll(); saveSession();
+        renderAll(); updateFullUI(); saveSession();
       };
-      
+
       let downBtn = document.createElement('button');
       downBtn.className = 'btn-outline'; downBtn.innerHTML = '▼'; downBtn.disabled = index === pages.length - 1;
       downBtn.onclick = () => {
         [pages[index + 1], pages[index]] = [pages[index], pages[index + 1]];
-        renderAll(); saveSession();
+        renderAll(); updateFullUI(); saveSession();
       };
-      
+
       let delBtn = document.createElement('button');
       delBtn.className = 'btn-danger'; delBtn.innerHTML = '🗑 Delete';
       delBtn.onclick = () => {
-        if(confirm('Remove this page?')) {
+        if (confirm('Remove this page?')) {
           pages.splice(index, 1);
-          renderAll(); saveSession();
+          renderAll(); updateFullUI(); saveSession();
         }
       };
 
       header.append(upBtn, downBtn, delBtn);
       block.appendChild(header);
 
-      // Body (Flex container)
+      // Body
       let body = document.createElement('div');
       body.className = 'page-body';
 
       // Stage (Left)
       let stageContainer = document.createElement('div');
       stageContainer.className = 'stage-container';
-      
+
       let stage = document.createElement('div');
       stage.className = 'stage';
       stage.id = `stage-${index}`;
-      
+
       let img = document.createElement('img');
       img.src = page.fileUrl;
-      
+
       stage.appendChild(img);
       stageContainer.appendChild(stage);
       body.appendChild(stageContainer);
-      
       wireStageDrawing(stage, index);
 
-      // Sidebar (Right) - Text Area
+      // Sidebar (Right) - this image's fragment
       let sidebar = document.createElement('div');
       sidebar.className = 'sidebar';
-      sidebar.innerHTML = `<label>Coordinates (x, y, w, h)</label>`;
-      
+
+      let sideHead = document.createElement('div');
+      sideHead.className = 'side-head';
+      sideHead.innerHTML = `<label for="textarea-${index}">Fragment for image ${index + 1}</label>`;
+      let copyFrag = document.createElement('button');
+      copyFrag.className = 'btn-success btn-small';
+      copyFrag.textContent = '📋 Copy';
+      copyFrag.onclick = () => {
+        let f = fragmentFor(index);
+        if (!f) return showToast("No boxes on this image!");
+        copyText(f, `✅ Image ${index + 1} fragment copied!`);
+      };
+      sideHead.appendChild(copyFrag);
+      sidebar.appendChild(sideHead);
+
       let textarea = document.createElement('textarea');
       textarea.id = `textarea-${index}`;
-      textarea.placeholder = "Example:\n10.5, 20, 30, 40\n15, 25, 10, 10=MyLabel";
-      
-      // Real-time Text -> Box parser
+      textarea.spellcheck = false;
+      textarea.placeholder = `${index + 1}:10.5,20,30,40; 15,25,10,10=Label`;
+
+      // Fragment -> boxes + full code (never rewrites this textarea while typing)
       textarea.addEventListener('input', (e) => {
-        let lines = e.target.value.split('\n');
-        let newBoxes = [];
-        lines.forEach(line => {
-          let b = parseStringIntoBoxes(line);
-          if(b.length > 0) newBoxes.push(b[0]);
-        });
-        pages[index].boxes = newBoxes;
+        let v = e.target.value.split('||')[0];
+        v = v.replace(/^\s*\d+\s*:/, '');
+        pages[index].boxes = parseStringIntoBoxes(v);
         updateStageUI(index);
+        updateFullUI();
         saveSession();
       });
 
       sidebar.appendChild(textarea);
-      sidebar.insertAdjacentHTML('beforeend', '<div class="help-text">Edit above to move boxes instantly. Format: X, Y, Width, Height. (Optional: append "=Label")</div>');
+      sidebar.insertAdjacentHTML('beforeend', '<div class="help-text">This is the exact line to replace in your original code. Edit it here or in the full code above; both stay in sync. Format: N:X,Y,W,H; X,Y,W,H=Label</div>');
       body.appendChild(sidebar);
       block.appendChild(body);
-      
+
       els.container.appendChild(block);
 
-      // Initialize UI for this block
-      updateTextareaUI(index);
+      updateFragmentUI(index);
       updateStageUI(index);
     });
   }
@@ -572,60 +573,57 @@
   els.fileInput.addEventListener('change', ev => {
     let files = Array.from(ev.target.files);
     if (!files.length) return;
-    
-    // Check if we have session data to auto-apply to these new images
-    let savedCode = sessionStorage.getItem(SESSION_KEY) || "";
-    
+
     let startIndex = pages.length;
     files.forEach(file => {
       pages.push({ fileUrl: URL.createObjectURL(file), boxes: [] });
     });
-    
-    // Try to auto-restore layout from session
-    if(savedCode) {
-        applyMasterCodeToPages(savedCode);
-    } else {
-        renderAll();
+
+    // Load any waiting boxes for the newly added page numbers
+    for (let i = startIndex; i < pages.length; i++) {
+      let n = i + 1;
+      if (pending[n] !== undefined) {
+        pages[i].boxes = parseStringIntoBoxes(pending[n]);
+        delete pending[n];
+      }
     }
+
+    renderAll();
+    updateFullUI();
+    saveSession();
     els.fileInput.value = '';
   });
 
-  els.copyAllBtn.addEventListener('click', () => {
-    let code = generateMasterCode();
-    if (!code) return showToast("No boxes to copy!");
-    navigator.clipboard.writeText(code).then(() => {
-      showToast("✅ Code Copied to Clipboard!");
-    }).catch(err => {
-      prompt("Copy this code:", code);
-    });
+  // Full code -> every fragment + every image
+  els.fullCode.addEventListener('input', () => {
+    applyFullCode(els.fullCode.value);
+    pages.forEach((p, i) => { updateFragmentUI(i); updateStageUI(i); });
+    saveSession();
   });
+
+  function copyFull() { copyText(els.fullCode.value.trim(), "✅ Full code copied!"); }
+  els.copyAllBtn.addEventListener('click', copyFull);
+  els.copyAllBtn2.addEventListener('click', copyFull);
 
   els.resetBtn.addEventListener('click', () => {
     if (!confirm('Clear all images and boxes?')) return;
     pages = [];
+    pending = {};
     sessionStorage.removeItem(SESSION_KEY);
+    els.fullCode.value = '';
     renderAll();
   });
 
-  els.toggleImportBtn.addEventListener('click', () => {
-    els.masterPasteArea.classList.toggle('open');
-    if(els.masterPasteArea.classList.contains('open')) {
-      els.masterPasteCode.value = generateMasterCode();
-    }
-  });
-
-  els.applyMasterCodeBtn.addEventListener('click', () => {
-    applyMasterCodeToPages(els.masterPasteCode.value);
-    els.masterPasteArea.classList.remove('open');
-    showToast("✅ Old code loaded!");
-  });
-
-  // Initial load check (if page refreshed, notify user they can restore by adding images)
-  if(sessionStorage.getItem(SESSION_KEY)) {
-      console.log("Found session data, ready to apply when images are uploaded.");
+  // Restore previous session code into the full box; boxes appear when images are added
+  let saved = sessionStorage.getItem(SESSION_KEY);
+  if (saved) {
+    els.fullCode.value = saved;
+    applyFullCode(saved);
   }
+  renderAll();
 
 })();
+
 </script>
 </body>
 </html>
